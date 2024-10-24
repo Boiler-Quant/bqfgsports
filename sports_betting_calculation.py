@@ -1,8 +1,8 @@
 import pandas as pd
+from config import csv_path
 
 # Load the CSV file
-file_path = '/Users/jamieborst/Documents/Purdue Senior Year/BQFG/player_props.csv'
-df = pd.read_csv(file_path)
+df = pd.read_csv(csv_path)
 
 # Function to calculate arbitrage opportunity
 def calculate_arbitrage(over_odds, under_odds, over_line, under_line):

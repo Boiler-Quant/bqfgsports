@@ -5,6 +5,7 @@ from selenium.webdriver.chrome.options import Options
 import time
 from bs4 import BeautifulSoup
 import pandas as pd
+from config import csv_path
 import os
 
 # Setup Selenium with headless Chrome
@@ -55,8 +56,15 @@ prop_names_text = [prop.get_text(strip=True) for prop in prop_names]
 # Find all player prop containers for odds
 prop_containers = soup.find_all('div', class_='flex odds-offer')
 
+over_value_best, over_odds_best = None, None
+under_value_best, under_odds_best = None, None
+over_value_consensus, over_odds_consensus = None, None
+under_value_consensus, under_odds_consensus = None, None
+
+
 # Loop through each prop container and match with prop names
 for i, prop in enumerate(prop_containers):
+    
     if i < len(prop_names_text):  # Ensure index is within bounds
         prop_name = prop_names_text[i]  # Get the corresponding prop name
 
@@ -115,7 +123,7 @@ for i, prop in enumerate(prop_containers):
 new_data_df = pd.DataFrame(player_props_list)
 
 # Define the path to the CSV file
-csv_path = '/Users/jamieborst/Documents/Purdue Senior Year/BQFG/player_props.csv'
+csv_path = csv_path
 
 # Check if the CSV file exists
 if os.path.exists(csv_path):
