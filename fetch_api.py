@@ -1,18 +1,15 @@
 import requests
 import json
-import time
 import pandas as pd
 from datetime import datetime
 import logging
 from typing import List, Dict, Any
 
 class OddsAggregator:
-    def __init__(self, api_key: str, base_url: str, requests_per_minute: int = 10, debug_file: str = None):
+    def __init__(self, api_key: str, base_url: str, debug_file: str = None):
         self.api_key = api_key
         self.base_url = base_url
-        self.min_interval = 60 / requests_per_minute
         self.debug_file = debug_file
-        self.last_request_time = 0
         
         self.sportsbooks = {
             'betrivers': 'betrivers_nba.json',
@@ -43,25 +40,17 @@ class OddsAggregator:
                 self.logger.error(f"Error reading debug file: {e}")
                 return {}
         
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        
-        if time_since_last_request < self.min_interval:
-            time.sleep(self.min_interval - time_since_last_request)
-        
         try:
             url = f"{self.get_base_url_for_sportsbook(sportsbook)}?key={self.api_key}"
             self.logger.info(f"Fetching data from {sportsbook}")
             response = requests.get(url)
             response.raise_for_status()
-            self.last_request_time = time.time()
             return response.json()
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error fetching {sportsbook} data: {e}")
             return {}
 
     def create_prop_key(self, game_id: str, market: str, player_name: str) -> str:
-        """Create a unique key for each prop bet"""
         return f"{game_id}:{market}:{player_name}".lower()
 
     def extract_player_props(self, data: Dict[str, Any], sportsbook: str) -> Dict[str, Dict]:
@@ -113,27 +102,22 @@ class OddsAggregator:
                         elif selection == 'under':
                             props_dict[prop_key][f'{sportsbook}_under_price'] = price
                             
-                        # Update the line if it's not set yet
                         if props_dict[prop_key][f'{sportsbook}_line'] is None:
                             props_dict[prop_key][f'{sportsbook}_line'] = points
         
         return props_dict
 
     def save_to_csv(self, props: List[Dict[str, Any]], filename: str):
-        """Save the player props data to a CSV file, keeping only the most recent entry for each unique prop"""
         if not props:
             return
             
-        # Create DataFrame from new props
         new_df = pd.DataFrame(props)
         
-        # Define base columns
         base_columns = [
             'game_id', 'game_start', 'game_status', 'away_team', 'home_team',
             'market', 'player_name', 'player_team', 'player_position', 'timestamp'
         ]
         
-        # Add sportsbook columns
         for sportsbook in sorted(self.sportsbooks.keys()):
             base_columns.extend([
                 f'{sportsbook}_line',
@@ -141,32 +125,22 @@ class OddsAggregator:
                 f'{sportsbook}_under_price'
             ])
         
-        # Ensure all columns exist
         for col in base_columns:
             if col not in new_df.columns:
                 new_df[col] = None
         
-        # Reorder columns
         new_df = new_df[base_columns]
         
         try:
-            # Read existing CSV file
             existing_df = pd.read_csv(filename)
             
-            # Create a unique identifier for each prop
             def create_identifier(row):
                 return f"{row['game_id']}:{row['market']}:{row['player_name']}".lower()
             
-            # Combine existing and new data
             combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-            
-            # Add identifier column
             combined_df['identifier'] = combined_df.apply(create_identifier, axis=1)
-            
-            # Convert timestamp to datetime
             combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'])
             
-            # Keep only the most recent entry for each unique prop
             latest_df = (combined_df
                         .sort_values('timestamp', ascending=False)
                         .drop_duplicates('identifier')
@@ -176,64 +150,43 @@ class OddsAggregator:
         except (FileNotFoundError, pd.errors.EmptyDataError):
             latest_df = new_df
         
-        # Save to CSV
         latest_df.to_csv(filename, index=False)
         self.logger.info(f"Updated {filename} - Total unique props: {len(latest_df)}")
 
-    def run(self, output_file: str, iterations: int = None, delay: int = 60):
-        iteration = 0
-        
-        while iterations is None or iteration < iterations:
-            try:
-                if self.debug_file:
-                    self.logger.info(f"Debug iteration {iteration + 1}")
+    def run_once(self, output_file: str):
+        try:
+            all_props = {}
+            
+            for sportsbook in self.sportsbooks:
+                data = self.fetch_odds_data(sportsbook)
+                if data:
+                    props = self.extract_player_props(data, sportsbook)
+                    for key, prop in props.items():
+                        if key in all_props:
+                            all_props[key].update(prop)
+                        else:
+                            all_props[key] = prop
+            
+            merged_props = list(all_props.values())
+            if merged_props:
+                self.save_to_csv(merged_props, output_file)
                 
-                all_props = {}
-                
-                for sportsbook in self.sportsbooks:
-                    data = self.fetch_odds_data(sportsbook)
-                    if data:
-                        props = self.extract_player_props(data, sportsbook)
-                        # Update existing props with new sportsbook data
-                        for key, prop in props.items():
-                            if key in all_props:
-                                all_props[key].update(prop)
-                            else:
-                                all_props[key] = prop
-                
-                merged_props = list(all_props.values())
-                if merged_props:
-                    self.save_to_csv(merged_props, output_file)
-                
-                iteration += 1
-                
-                if iterations is None and not self.debug_file:
-                    time.sleep(delay)
-                
-            except Exception as e:
-                self.logger.error(f"Error: {e}")
-                time.sleep(delay)
+        except Exception as e:
+            self.logger.error(f"Error: {e}")
 
 def main():
-    # Configuration
     API_KEY = "OBFMutcQkGXgddcPessefTL"
     BASE_URL = "https://data.oddsblaze.com/v1/odds/betrivers_nba.json"
     OUTPUT_FILE = "player_props.csv"
-    DEBUG_FILE = ""  # Set to None for live API mode
-    DELAY = 60  # Seconds between iterations
+    DEBUG_FILE = ""  # Set to None for live mode
     
     aggregator = OddsAggregator(
         api_key=API_KEY,
         base_url=BASE_URL,
-        requests_per_minute=10,
         debug_file=DEBUG_FILE
     )
     
-    aggregator.run(
-        output_file=OUTPUT_FILE,
-        iterations=1 if DEBUG_FILE else None,
-        delay=DELAY
-    )
+    aggregator.run_once(output_file=OUTPUT_FILE)
 
 if __name__ == "__main__":
     main()
