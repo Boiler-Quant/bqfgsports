@@ -17,7 +17,6 @@ class OddsAggregator:
         # Define sportsbooks and their endpoints
         self.sportsbooks = {
             'betrivers': 'betrivers_nba.json',
-            'espn_bet': 'espn_bet_nba.json',
             'fliff': 'fliff_nba.json',
             'pinnacle': 'pinnacle_nba.json'
         }
@@ -123,11 +122,12 @@ class OddsAggregator:
         return list(all_props.values())
 
     def save_to_csv(self, props: List[Dict[str, Any]], filename: str):
-        """Save the player props data to a CSV file"""
+        """Save the player props data to a CSV file, keeping only the most recent entry for each prop"""
         if not props:
             return
             
-        df = pd.DataFrame(props)
+        # Create DataFrame from new props
+        new_df = pd.DataFrame(props)
         
         # Sort columns to maintain consistent order
         columns = ['game_id', 'game_start', 'game_status', 'away_team', 'home_team', 
@@ -142,16 +142,43 @@ class OddsAggregator:
             ])
         
         # Reorder columns and fill missing values with None
-        df = df.reindex(columns=columns)
+        new_df = new_df.reindex(columns=columns)
         
         try:
+            # Read existing CSV file
             existing_df = pd.read_csv(filename)
-            df = pd.concat([existing_df, df], ignore_index=True)
+            
+            # Create a unique identifier for each prop (excluding timestamp)
+            def create_identifier(row):
+                return f"{row['game_id']}:{row['player_name']}:{row['market']}".lower()
+            
+            # Combine existing and new data
+            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            
+            # Add identifier column
+            combined_df['identifier'] = combined_df.apply(create_identifier, axis=1)
+            
+            # Keep only the most recent entry for each unique prop
+            # Convert timestamp to datetime for proper comparison
+            combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'])
+            
+            # Get the most recent entry for each identifier
+            latest_df = (combined_df
+                        .sort_values('timestamp', ascending=False)
+                        .drop_duplicates('identifier'))
+            
+            # Remove the identifier column and sort
+            latest_df = (latest_df
+                        .drop('identifier', axis=1)
+                        .sort_values(['game_start', 'player_name', 'market']))
+            
         except (FileNotFoundError, pd.errors.EmptyDataError):
-            pass
+            # If file doesn't exist or is empty, just use new data
+            latest_df = new_df
         
-        df.to_csv(filename, index=False)
-        self.logger.info(f"Updated {filename} with {len(props)} props")
+        # Save to CSV
+        latest_df.to_csv(filename, index=False)
+        self.logger.info(f"Updated {filename} - Total unique props: {len(latest_df)}")
 
     def run(self, output_file: str, iterations: int = None, delay: int = 60):
         """Main function to run the data collection process"""
