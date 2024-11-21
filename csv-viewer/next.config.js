@@ -4,8 +4,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // This should match your GitHub repository name
-  basePath: '/csv-viewer',
+  // This should match your GitHub repository name/project path
+  basePath: '/bqfg/csv-viewer',
   reactStrictMode: true,
   webpack(config) {
     config.module.rules.push({
