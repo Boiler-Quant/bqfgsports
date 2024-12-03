@@ -2,7 +2,7 @@ name: Deploy Next.js site to Pages
 
 on:
   push:
-    branches: ["adi"]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -20,23 +20,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          
+      # Add working directory for all Node/NPM operations
+      defaults:
+        run:
+          working-directory: ./csv-viewer
+          
       - name: Install dependencies
+        working-directory: ./csv-viewer
         run: npm install
+        
       - name: Build with Next.js
+        working-directory: ./csv-viewer
         run: npm run build
         env:
           NEXT_PUBLIC_AWS_REGION: ${{ secrets.NEXT_PUBLIC_AWS_REGION }}
           NEXT_PUBLIC_AWS_ACCESS_KEY_ID: ${{ secrets.NEXT_PUBLIC_AWS_ACCESS_KEY_ID }}
           NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY: ${{ secrets.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY }}
           NEXT_PUBLIC_S3_BUCKET: ${{ secrets.NEXT_PUBLIC_S3_BUCKET }}
+          
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./out
+          path: ./csv-viewer/out
 
   deploy:
     environment:
