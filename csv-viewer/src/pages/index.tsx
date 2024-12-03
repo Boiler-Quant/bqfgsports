@@ -4,6 +4,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import Papa from 'papaparse';
 import CsvTable from '../components/CsvTable';
 import { CsvData } from '../types';
+import Head from 'next/head';
 
 export default function Home() {
   const [csvData, setCsvData] = useState<CsvData[]>([]);
@@ -23,7 +24,7 @@ export default function Home() {
 
         const command = new GetObjectCommand({
           Bucket: process.env.NEXT_PUBLIC_S3_BUCKET!,
-          Key: 'data.csv', // Update this path
+          Key: 'finalized_data.csv', // Update this path
         });
 
         const response = await s3Client.send(command);
@@ -74,9 +75,14 @@ export default function Home() {
   }
 
   return (
+    <>
+    <Head>
+      <title>BQFG Sports</title>
+    </Head>
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">CSV Data Viewer</h1>
+      <h1 className="text-3xl font-bold mb-6">BQFG Sports</h1>
       <CsvTable data={csvData} />
     </div>
+    </>
   );
 }
