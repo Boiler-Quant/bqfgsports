@@ -3,10 +3,10 @@ import { useState, useEffect } from 'react';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import Papa from 'papaparse';
 import CsvTable from '../components/CsvTable';
-import Head from 'next/head';
+import { CsvData } from '../types';
 
 export default function Home() {
-  const [csvData, setCsvData] = useState<any[]>([]);
+  const [csvData, setCsvData] = useState<CsvData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,7 +23,7 @@ export default function Home() {
 
         const command = new GetObjectCommand({
           Bucket: process.env.NEXT_PUBLIC_S3_BUCKET!,
-          Key: 'data.csv', // Update this path
+          Key: 'path/to/your/file.csv', // Update this path
         });
 
         const response = await s3Client.send(command);
@@ -33,17 +33,18 @@ export default function Home() {
           Papa.parse(str, {
             header: true,
             complete: (results) => {
-              setCsvData(results.data);
+              setCsvData(results.data as CsvData[]);
               setLoading(false);
             },
-            error: (error) => {
+            error: (error: { message: string; }) => {
               setError('Error parsing CSV: ' + error.message);
               setLoading(false);
             }
           });
         }
-      } catch (err: any) {
-        setError('Error fetching CSV: ' + err.message);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        setError('Error fetching CSV: ' + errorMessage);
         setLoading(false);
       }
     }
@@ -73,11 +74,9 @@ export default function Home() {
   }
 
   return (
-    <><Head>
-      <title>BQFG Sports</title>
-    </Head><div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-6">BQFG Sports</h1>
-        <CsvTable data={csvData} />
-      </div></>
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">CSV Data Viewer</h1>
+      <CsvTable data={csvData} />
+    </div>
   );
 }

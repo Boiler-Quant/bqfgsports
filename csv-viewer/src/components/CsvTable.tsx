@@ -1,8 +1,9 @@
 // src/components/CsvTable.tsx
 import { FC } from 'react';
+import { CsvData } from '../types';
 
 interface CsvTableProps {
-  data: any[];
+  data: CsvData[];
 }
 
 const CsvTable: FC<CsvTableProps> = ({ data }) => {
