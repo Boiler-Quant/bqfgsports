@@ -24,7 +24,7 @@ export default function Home() {
 
         const command = new GetObjectCommand({
           Bucket: process.env.NEXT_PUBLIC_S3_BUCKET!,
-          Key: 'finalized_data.csv', // Update this path
+          Key: 'results.csv', // Update this path
         });
 
         const response = await s3Client.send(command);
