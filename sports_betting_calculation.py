@@ -72,6 +72,8 @@ df['Under Line'] = df['best_bet_line_under']
 df['Over Consensus Odds'] = df['fair_odds_over']
 df['Under Consensus Odds'] = df['fair_odds_under']
 df['Player Prop'] = df['player_name'] + " - " + df['market']
+
+df = df[df['game_status'] == 'Scheduled']
 # List to hold the results
 results = []
 
@@ -100,8 +102,11 @@ for index, row in df.iterrows():
     # Append the results to the list
     results.append({
         'Player Prop': row['Player Prop'],
+        'Game Start': row ['game_start'],
         'Over Bet Sportsbook': row['best_odds_over_sportsbook'],
+        'Over Line': row['best_bet_line_over'],
         'Under Bet Sportsbook': row['best_odds_under_sportsbook'], 
+        'Under Line': row['best_bet_line_under'],
         'Bet on Over': round(bet_on_over * 100, 2) if bet_on_over is not None else '',
         'Bet on Under': round(bet_on_under * 100, 2) if bet_on_under is not None else '',
         'Profit if Over Hits': round(profit_over * 100, 2) if profit_over is not None else '',
@@ -115,6 +120,18 @@ for index, row in df.iterrows():
 
 # Create a DataFrame from the results and save it to a CSV file
 output_df = pd.DataFrame(results)
+# Identify columns to check after 'Under Bet Sportsbook'
+columns_to_check = [
+    'Bet on Over', 'Bet on Under', 'Profit if Over Hits', 
+    'Profit if Under Hits', 'Profit if Middle Hits', 
+    'Over EV (%)', 'Under EV (%)', 'Kelly Over Bet (%)', 'Kelly Under Bet (%)'
+]
+
+# Filter out rows where all these columns are empty
+output_df = output_df[~output_df[columns_to_check].isnull().all(axis=1)]
+output_df = output_df[~output_df[columns_to_check].eq('').all(axis=1)]
+
+# Save the filtered DataFrame to a CSV file
 output_df.to_csv('/Users/jamieborst/Downloads/arbitrage_results_with_ev_and_kelly.csv', index=False)
 
-print("Arbitrage, EV, and Kelly Criterion calculations have been saved to 'arbitrage_results_with_ev_and_kelly.csv'.")
+print("Filtered rows with empty data have been removed and saved to 'arbitrage_results_with_ev_and_kelly.csv'.")
