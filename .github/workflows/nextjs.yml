@@ -25,12 +25,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          
-      # Add working directory for all Node/NPM operations
-      defaults:
-        run:
-          working-directory: ./csv-viewer
-          
+
       - name: Install dependencies
         working-directory: ./csv-viewer
         run: npm install
