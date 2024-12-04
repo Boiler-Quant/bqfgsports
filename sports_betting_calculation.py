@@ -1,8 +1,9 @@
+# Need to add strategy that finds edge between Odds Values
 import pandas as pd
-from config import csv_path
 
 # Load the CSV file
-df = pd.read_csv(csv_path)
+file_path = '/Users/jamieborst/Downloads/combined_data_with_best_odds_and_lines.csv'
+df = pd.read_csv(file_path)
 
 # Function to calculate arbitrage opportunity
 def calculate_arbitrage(over_odds, under_odds, over_line, under_line):
@@ -64,18 +65,15 @@ def kelly_criterion(prob, odds):
     edge = prob - (1 / decimal_odds)
     return edge / (decimal_odds - 1) if edge > 0 else 0
 
-# Convert the odds from string to integer
-df['Over Odds'] = df['Over Best Odds Value'].str.extract(r'([-+]?\d+)').astype(int)
-df['Under Odds'] = df['Under Best Odds Value'].str.extract(r'([-+]?\d+)').astype(int)
+df['Over Odds'] = df['best_odds_over']
+df['Under Odds'] = df['best_odds_under']
+df['Over Line'] = df['best_bet_line_over']
+df['Under Line'] = df['best_bet_line_under']
+df['Over Consensus Odds'] = df['fair_odds_over']
+df['Under Consensus Odds'] = df['fair_odds_under']
+df['Player Prop'] = df['player_name'] + " - " + df['market']
 
-# Convert the over and under lines from string to float
-df['Over Line'] = df['Over Best Odds'].str.extract(r'(\d+\.\d+|\d+)').astype(float)
-df['Under Line'] = df['Under Best Odds'].str.extract(r'(\d+\.\d+|\d+)').astype(float)
-
-# Extract consensus odds values into new columns for easy access
-df['Over Consensus Odds'] = df['Over Consensus Odds Value'].str.extract(r'([-+]?\d+)').astype(int)
-df['Under Consensus Odds'] = df['Under Consensus Odds Value'].str.extract(r'([-+]?\d+)').astype(int)
-
+df = df[df['game_status'] == 'Scheduled']
 # List to hold the results
 results = []
 
@@ -104,6 +102,11 @@ for index, row in df.iterrows():
     # Append the results to the list
     results.append({
         'Player Prop': row['Player Prop'],
+        'Game Start': row ['game_start'],
+        'Over Bet Sportsbook': row['best_odds_over_sportsbook'],
+        'Over Line': row['best_bet_line_over'],
+        'Under Bet Sportsbook': row['best_odds_under_sportsbook'], 
+        'Under Line': row['best_bet_line_under'],
         'Bet on Over': round(bet_on_over * 100, 2) if bet_on_over is not None else '',
         'Bet on Under': round(bet_on_under * 100, 2) if bet_on_under is not None else '',
         'Profit if Over Hits': round(profit_over * 100, 2) if profit_over is not None else '',
@@ -117,6 +120,18 @@ for index, row in df.iterrows():
 
 # Create a DataFrame from the results and save it to a CSV file
 output_df = pd.DataFrame(results)
-output_df.to_csv('/Users/jamieborst/Documents/Purdue Senior Year/BQFG/arbitrage_results_with_ev_and_kelly.csv', index=False)
+# Identify columns to check after 'Under Bet Sportsbook'
+columns_to_check = [
+    'Bet on Over', 'Bet on Under', 'Profit if Over Hits', 
+    'Profit if Under Hits', 'Profit if Middle Hits', 
+    'Over EV (%)', 'Under EV (%)', 'Kelly Over Bet (%)', 'Kelly Under Bet (%)'
+]
 
-print("Arbitrage, EV, and Kelly Criterion calculations have been saved to 'arbitrage_results_with_ev_and_kelly.csv'.")
+# Filter out rows where all these columns are empty
+output_df = output_df[~output_df[columns_to_check].isnull().all(axis=1)]
+output_df = output_df[~output_df[columns_to_check].eq('').all(axis=1)]
+
+# Save the filtered DataFrame to a CSV file
+output_df.to_csv('/Users/jamieborst/Downloads/arbitrage_results_with_ev_and_kelly.csv', index=False)
+
+print("Filtered rows with empty data have been removed and saved to 'arbitrage_results_with_ev_and_kelly.csv'.")
