@@ -66,44 +66,61 @@ class OddsAggregator:
             home_team = teams.get('home', {}).get('name')
             
             for sb in game.get('sportsbooks', []):
+                # Group odds by market and player
+                market_player_odds = {}
                 for odd in sb.get('odds', []):
                     market = odd.get('market', '')
                     if 'player' in market.lower():
                         player = odd.get('players', [{}])[0] if odd.get('players') else {}
-                        points = odd.get('points')
-                        selection = odd.get('selection', '').lower()
                         player_name = player.get('name')
-                        price = odd.get('price')
-                        
-                        if not all([game_id, market, player_name]):
+                        if not player_name:
                             continue
                             
-                        prop_key = self.create_prop_key(game_id, market, player_name)
-                        
-                        if prop_key not in props_dict:
-                            props_dict[prop_key] = {
-                                'game_id': game_id,
-                                'game_start': game_start,
-                                'game_status': game_status,
-                                'away_team': away_team,
-                                'home_team': home_team,
-                                'market': market,
-                                'player_name': player_name,
-                                'player_team': player.get('team', {}).get('name'),
-                                'player_position': player.get('position'),
-                                'timestamp': datetime.now().isoformat(),
-                                f'{sportsbook}_line': points,
-                                f'{sportsbook}_over_price': None,
-                                f'{sportsbook}_under_price': None
-                            }
+                        key = (market, player_name)
+                        if key not in market_player_odds:
+                            market_player_odds[key] = []
+                        market_player_odds[key].append(odd)
+                
+                # Process grouped odds, prioritizing main=true
+                for (market, player_name), odds_list in market_player_odds.items():
+                    # Sort odds to prioritize main=true
+                    main_odds = [odd for odd in odds_list if odd.get('main') is True]
+                    if main_odds:
+                        odds_to_use = main_odds
+                    else:
+                        odds_to_use = odds_list
+
+                    # Get the first odd's points as the line
+                    points = odds_to_use[0].get('points') if odds_to_use else None
+                    
+                    prop_key = self.create_prop_key(game_id, market, player_name)
+                    
+                    if prop_key not in props_dict:
+                        props_dict[prop_key] = {
+                            'game_id': game_id,
+                            'game_start': game_start,
+                            'game_status': game_status,
+                            'away_team': away_team,
+                            'home_team': home_team,
+                            'market': market,
+                            'player_name': player_name,
+                            'player_team': odds_to_use[0].get('players', [{}])[0].get('team', {}).get('name') if odds_to_use else None,
+                            'player_position': odds_to_use[0].get('players', [{}])[0].get('position') if odds_to_use else None,
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            f'{sportsbook}_line': points,
+                            f'{sportsbook}_over_price': None,
+                            f'{sportsbook}_under_price': None
+                        }
+                    
+                    # Set prices from the odds_to_use
+                    for odd in odds_to_use:
+                        selection = odd.get('selection', '').lower()
+                        price = odd.get('price')
                         
                         if selection == 'over':
                             props_dict[prop_key][f'{sportsbook}_over_price'] = price
                         elif selection == 'under':
                             props_dict[prop_key][f'{sportsbook}_under_price'] = price
-                            
-                        if props_dict[prop_key][f'{sportsbook}_line'] is None:
-                            props_dict[prop_key][f'{sportsbook}_line'] = points
         
         return props_dict
 
@@ -133,13 +150,15 @@ class OddsAggregator:
         
         try:
             existing_df = pd.read_csv(filename)
+            existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp'])
             
             def create_identifier(row):
                 return f"{row['game_id']}:{row['market']}:{row['player_name']}".lower()
             
+            new_df['timestamp'] = pd.to_datetime(new_df['timestamp'])
+            
             combined_df = pd.concat([existing_df, new_df], ignore_index=True)
             combined_df['identifier'] = combined_df.apply(create_identifier, axis=1)
-            combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'])
             
             latest_df = (combined_df
                         .sort_values('timestamp', ascending=False)
