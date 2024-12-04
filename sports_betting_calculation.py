@@ -110,6 +110,7 @@ output_df = pd.DataFrame(results)
 columns_to_check = [
     'Bet on Over', 'Bet on Under', '% Profit if Over Hits', 
     '% Profit if Under Hits', '% Profit if Middle Hits', 
+    'Over Edge (%)', 'Under Edge (%)', 
     'Kelly Over Bet (% of bankroll)', 'Kelly Under Bet (% of bankroll)'
 ]
 
