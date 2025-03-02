@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the CSV file
-file_path = '/Users/jamieborst/Downloads/combined_data_with_best_odds_and_vig.csv'
+file_path = '/Users/jamieborst/Downloads/enhanced_betting_analysis.csv'
 df = pd.read_csv(file_path)
 
 # Function to calculate arbitrage opportunity
@@ -44,7 +44,7 @@ def calculate_ev_and_kelly(best_odds, consensus_odds):
 
     edge = (p_win * payout) - (1 - p_win)
 
-    # Calculate Kelly Fraction
+    # Kelly Fraction
     kelly_fraction = edge / payout if edge > 0 else 0
     
     return kelly_fraction, edge
@@ -69,6 +69,10 @@ for index, row in df.iterrows():
     profit_over_hits = ''
     profit_under_hits = ''
     profit_middle_hits = ''
+    kelly_over = 0
+    edge_over = 0
+    kelly_under = 0
+    edge_under = 0
 
     # Perform arbitrage and calculate profit metrics only if Over Line <= Under Line
     if row['Over Line'] <= row['Under Line']:
@@ -88,9 +92,14 @@ for index, row in df.iterrows():
             ) else ''
         )
 
-    # Always calculate EV and Kelly
-    kelly_over, edge_over = calculate_ev_and_kelly(row['Over Odds'], row['Over Consensus Odds'])
-    kelly_under, edge_under = calculate_ev_and_kelly(row['Under Odds'], row['Under Consensus Odds'])
+    # Calculate EV and Kelly only if line conditions are met
+    # For Over: best odds over line <= fair odds over line
+    if row['best_odds_over_line'] <= row['fair_line']:
+        kelly_over, edge_over = calculate_ev_and_kelly(row['Over Odds'], row['Over Consensus Odds'])
+    
+    # For Under: best odds under line >= fair odds under line
+    if row['best_odds_under_line'] >= row['fair_line']:
+        kelly_under, edge_under = calculate_ev_and_kelly(row['Under Odds'], row['Under Consensus Odds'])
 
     # Append the results to the list
     results.append({
@@ -98,10 +107,14 @@ for index, row in df.iterrows():
         'Game Start': row['game_start'],
         'Over Bet Sportsbook': row['best_odds_over_sportsbook'],
         'Best Over Odds': row['best_odds_over'],
-        'Over Line': row['best_odds_over_line'],
+        'Best Odds Over Line': row['best_odds_over_line'],
         'Under Bet Sportsbook': row['best_odds_under_sportsbook'], 
         'Best Under Odds': row['best_odds_under'],
-        'Under Line': row['best_odds_under_line'],
+        'Best Odds Under Line': row['best_odds_under_line'],
+        'Fair Odds Over': row['fair_odds_over'],
+        'Fair Odds Over Line': row['fair_line'],
+        'Fair Odds Under': row['fair_odds_under'],
+        'Fair Odds Under Line': row['fair_line'],
         'Bet on Over': round(bet_on_over * 100, 2) if bet_on_over is not None else '',
         'Bet on Under': round(bet_on_under * 100, 2) if bet_on_under is not None else '',
         '% Profit if Over Hits': profit_over_hits,
