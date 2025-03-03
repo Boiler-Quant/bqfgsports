@@ -3,8 +3,43 @@ import numpy as np
 from collections import Counter
 
 # Load the dataset
-file_path = '/Users/jamieborst/Downloads/player_props (1).csv' 
+file_path = '/Users/jamieborst/Downloads/player_props_new.csv' 
 player_props_data = pd.read_csv(file_path)
+
+# Define a function to convert decimal odds to American odds
+def decimal_to_american(decimal_odds):
+    if pd.isna(decimal_odds):
+        return None
+    
+    # Handle edge cases
+    if decimal_odds <= 1.0:
+        # Invalid odds, return very negative number or None
+        return None
+    
+    if decimal_odds >= 2.0:
+        # For decimal odds >= 2.0, American odds are positive
+        return round((decimal_odds - 1) * 100)
+    else:
+        # For decimal odds < 2.0, American odds are negative
+        return round(-100 / (decimal_odds - 1))
+
+# List of sportsbooks
+sportsbooks = ['betmgm', 'betonlineag', 'betrivers', 'bovada', 'draftkings', 'fanduel']
+over_columns = [f"{book}_over_price" for book in sportsbooks]
+under_columns = [f"{book}_under_price" for book in sportsbooks]
+
+# Convert decimal odds to American odds for all sportsbooks
+for over_col, under_col in zip(over_columns, under_columns):
+    # Create temporary columns to store converted odds
+    player_props_data[f'{over_col}_american'] = player_props_data[over_col].apply(decimal_to_american)
+    player_props_data[f'{under_col}_american'] = player_props_data[under_col].apply(decimal_to_american)
+    
+    # Replace the original columns with the converted odds
+    player_props_data[over_col] = player_props_data[f'{over_col}_american']
+    player_props_data[under_col] = player_props_data[f'{under_col}_american']
+    
+    # Drop the temporary columns
+    player_props_data.drop(columns=[f'{over_col}_american', f'{under_col}_american'], inplace=True)
 
 # Define a function to calculate implied probability
 def implied_probability(odds):
@@ -41,8 +76,7 @@ def probability_to_american_odds(prob):
     else:
         return 100 * ((1 - prob) / prob)
 
-# List of sportsbooks
-sportsbooks = ['betrivers', 'bovada', 'espn_bet', 'fliff', 'pinnacle', 'thescore_bet']
+# Update the list of columns after conversion
 over_columns = [f"{book}_over_price" for book in sportsbooks]
 under_columns = [f"{book}_under_price" for book in sportsbooks]
 line_columns = [f"{book}_line" for book in sportsbooks]
@@ -185,6 +219,4 @@ if 'vig_from_best_odds' in player_props_data.columns:
     player_props_data['vig_from_best_odds'] = pd.to_numeric(player_props_data['vig_from_best_odds'], errors='coerce')
 
 # Save the dataset with all calculated columns to a single file
-player_props_data.to_csv('/Users/jamieborst/Downloads/enhanced_betting_analysis.csv', index=False)
-
-print("Enhanced dataset with fair lines, best odds, and vig calculations saved to 'enhanced_betting_analysis.csv'")
+player_props_data.to_csv('/Users/jamieborst/Downloads/combined_data_with_best_odds_and_fair_odds.csv', index=False)
