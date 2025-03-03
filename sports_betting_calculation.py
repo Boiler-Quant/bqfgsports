@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the CSV file
-file_path = '/Users/jamieborst/Downloads/enhanced_betting_analysis.csv'
+file_path = '/Users/jamieborst/Downloads/combined_data_with_best_odds_and_fair_odds.csv'
 df = pd.read_csv(file_path)
 
 # Function to calculate arbitrage opportunity
@@ -57,7 +57,6 @@ df['Over Consensus Odds'] = df['fair_odds_over']
 df['Under Consensus Odds'] = df['fair_odds_under']
 df['Player Prop'] = df['player_name'] + " - " + df['market']
 
-df = df[df['game_status'] == 'Scheduled']
 # List to hold the results
 results = []
 
@@ -82,15 +81,26 @@ for index, row in df.iterrows():
             row['Over Line'], 
             row['Under Line']
         )
-        profit_over_hits = (row['vig_from_best_odds'] * -1) if row['vig_from_best_odds'] < 0 else ''
-        profit_under_hits = (row['vig_from_best_odds'] * -1) if row['vig_from_best_odds'] < 0 else ''
-        profit_middle_hits = (
-            (row['vig_from_best_odds'] * -1) * 2 
-            if (
-                row['vig_from_best_odds'] < 0 and 
-                row['best_odds_over_line'] != row['best_odds_under_line']
-            ) else ''
-        )
+    
+    # Only calculate profit metrics if there's a valid arbitrage opportunity
+    if bet_on_over is not None and bet_on_under is not None:
+        # Calculate the implied probabilities for over and under directly
+        over_implied_prob = 100 / (row['Over Odds'] + 100) if row['Over Odds'] > 0 else -row['Over Odds'] / (-row['Over Odds'] + 100)
+        under_implied_prob = 100 / (row['Under Odds'] + 100) if row['Under Odds'] > 0 else -row['Under Odds'] / (-row['Under Odds'] + 100)
+        total_implied_prob = over_implied_prob + under_implied_prob
+        
+        # Only valid if the total implied probability is less than 1 (i.e. an arbitrage exists)
+        if total_implied_prob < 1:
+            profit_value = (1 - total_implied_prob) * 100  # Revised profit calculation
+            profit_over_hits = round(profit_value, 2)
+            profit_under_hits = round(profit_value, 2)
+            
+            # If lines differ, double the profit for a middle hit scenario
+            if row['best_odds_over_line'] != row['best_odds_under_line']:
+                profit_middle_hits = round(profit_value * 2, 2)
+            else:
+                profit_middle_hits = ''
+
 
     # Calculate EV and Kelly only if line conditions are met
     # For Over: best odds over line <= fair odds over line
