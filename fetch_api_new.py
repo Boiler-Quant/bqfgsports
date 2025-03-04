@@ -186,7 +186,7 @@ class PlayerPropsAggregator:
         self.logger.info(f"Updated {filename} - Total unique props: {len(latest_df)}")
 
 def main():
-    API_KEY = "e000504b835e1d765a889d7e60a52a2c"
+    API_KEY = "949fb137acada2ab7d0d1e7105e45c5e"
     # You can adjust the sport keys as needed. Here we try NBA, NCAAB, and WNBA.
     sport_keys = ["basketball_nba", "basketball_ncaab"]
     OUTPUT_FILE = "player_props.csv"

@@ -3,7 +3,7 @@ import numpy as np
 from collections import Counter
 
 # Load the dataset
-file_path = '/Users/jamieborst/Downloads/player_props_new.csv' 
+file_path = 'player_props.csv' 
 player_props_data = pd.read_csv(file_path)
 
 # Define a function to convert decimal odds to American odds
@@ -30,16 +30,20 @@ under_columns = [f"{book}_under_price" for book in sportsbooks]
 
 # Convert decimal odds to American odds for all sportsbooks
 for over_col, under_col in zip(over_columns, under_columns):
-    # Create temporary columns to store converted odds
-    player_props_data[f'{over_col}_american'] = player_props_data[over_col].apply(decimal_to_american)
-    player_props_data[f'{under_col}_american'] = player_props_data[under_col].apply(decimal_to_american)
-    
-    # Replace the original columns with the converted odds
-    player_props_data[over_col] = player_props_data[f'{over_col}_american']
-    player_props_data[under_col] = player_props_data[f'{under_col}_american']
-    
-    # Drop the temporary columns
-    player_props_data.drop(columns=[f'{over_col}_american', f'{under_col}_american'], inplace=True)
+    # Check if the columns exist in the DataFrame
+    if over_col in player_props_data.columns and under_col in player_props_data.columns:
+        # Create temporary columns to store converted odds
+        player_props_data[f'{over_col}_american'] = player_props_data[over_col].apply(decimal_to_american)
+        player_props_data[f'{under_col}_american'] = player_props_data[under_col].apply(decimal_to_american)
+        
+        # Replace the original columns with the converted odds
+        player_props_data[over_col] = player_props_data[f'{over_col}_american']
+        player_props_data[under_col] = player_props_data[f'{under_col}_american']
+        
+        # Drop the temporary columns
+        player_props_data.drop(columns=[f'{over_col}_american', f'{under_col}_american'], inplace=True)
+    else:
+        print(f"Warning: Columns {over_col} or {under_col} do not exist in the DataFrame.")
 
 # Define a function to calculate implied probability
 def implied_probability(odds):
@@ -219,4 +223,4 @@ if 'vig_from_best_odds' in player_props_data.columns:
     player_props_data['vig_from_best_odds'] = pd.to_numeric(player_props_data['vig_from_best_odds'], errors='coerce')
 
 # Save the dataset with all calculated columns to a single file
-player_props_data.to_csv('/Users/jamieborst/Downloads/combined_data_with_best_odds_and_fair_odds.csv', index=False)
+player_props_data.to_csv('combined_data_with_best_odds_and_fair_odds.csv', index=False)

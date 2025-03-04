@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the CSV file
-file_path = '/Users/jamieborst/Downloads/combined_data_with_best_odds_and_fair_odds.csv'
+file_path = 'combined_data_with_best_odds_and_fair_odds.csv'
 df = pd.read_csv(file_path)
 
 # Function to calculate arbitrage opportunity
@@ -151,6 +151,6 @@ output_df = output_df[~output_df[columns_to_check].isnull().all(axis=1)]
 output_df = output_df[~output_df[columns_to_check].eq('').all(axis=1)]
 
 # Save the filtered DataFrame to a CSV file
-output_df.to_csv('/Users/jamieborst/Downloads/arbitrage_results_with_ev_and_kelly.csv', index=False)
+output_df.to_csv('arbitrage_results_with_ev_and_kelly.csv', index=False)
 
 print("Filtered rows with empty data have been removed and saved to 'arbitrage_results_with_ev_and_kelly.csv'.")
