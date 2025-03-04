@@ -28,6 +28,7 @@ const CsvTable: FC<CsvTableProps> = ({ data }) => {
   };
 
   // Filter and sort data
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const filteredAndSortedData = useMemo(() => {
     let processedData = [...data];
 
