@@ -101,11 +101,6 @@ def calculate_statistics(run_profits):
     
     return avg_profit, profitable_runs_pct, std_dev, risk_adjusted_return, percentiles
 
-def calculate_bankruptcy_rate(run_profits):
-    """Calculate the percentage of simulations that ended in bankruptcy"""
-    bankruptcies = sum(1 for profit in run_profits if profit <= -99)  # Consider -99 or less as bankruptcy
-    return (bankruptcies / len(run_profits)) * 100
-
 def print_strategy_results(strategy_name, total_runs, total_bets, run_profits):
     """Print formatted simulation results"""
     avg_bets_per_run = total_bets / total_runs
@@ -124,45 +119,6 @@ def print_strategy_results(strategy_name, total_runs, total_bets, run_profits):
     print(f"  Max: {percentiles['max']:.2f}%")
     
     return avg_profit, std_dev, risk_adjusted
-
-def print_kelly_comparison_results(full_results, half_results, quarter_results, num_simulations):
-    """Print comparison of different Kelly fraction strategies"""
-    # Unpack results
-    full_total_bets, full_run_profits, _ = full_results
-    half_total_bets, half_run_profits, _ = half_results
-    quarter_total_bets, quarter_run_profits, _ = quarter_results
-    
-    # Calculate statistics
-    full_avg_profit, full_profitable_pct, full_std_dev, full_risk_adjusted, full_percentiles = calculate_statistics(full_run_profits)
-    half_avg_profit, half_profitable_pct, half_std_dev, half_risk_adjusted, half_percentiles = calculate_statistics(half_run_profits)
-    quarter_avg_profit, quarter_profitable_pct, quarter_std_dev, quarter_risk_adjusted, quarter_percentiles = calculate_statistics(quarter_run_profits)
-    
-    # Calculate bankruptcy rates
-    full_bankruptcy_rate = calculate_bankruptcy_rate(full_run_profits)
-    half_bankruptcy_rate = calculate_bankruptcy_rate(half_run_profits)
-    quarter_bankruptcy_rate = calculate_bankruptcy_rate(quarter_run_profits)
-    
-    print("\n=== KELLY FRACTION COMPARISON ===")
-    
-    # Format data for tabular display
-    strategies = ["Full Kelly", "Half Kelly", "Quarter Kelly"]
-    avg_bets = [full_total_bets / num_simulations, half_total_bets / num_simulations, quarter_total_bets / num_simulations]
-    avg_profits = [full_avg_profit, half_avg_profit, quarter_avg_profit]
-    profitable_pcts = [full_profitable_pct, half_profitable_pct, quarter_profitable_pct]
-    std_devs = [full_std_dev, half_std_dev, quarter_std_dev]
-    risk_adjusteds = [full_risk_adjusted, half_risk_adjusted, quarter_risk_adjusted]
-    bankruptcy_rates = [full_bankruptcy_rate, half_bankruptcy_rate, quarter_bankruptcy_rate]
-    min_profits = [full_percentiles['min'], half_percentiles['min'], quarter_percentiles['min']]
-    median_profits = [full_percentiles['median'], half_percentiles['median'], quarter_percentiles['median']]
-    max_profits = [full_percentiles['max'], half_percentiles['max'], quarter_percentiles['max']]
-    
-    # Print table headers
-    print(f"{'Strategy':<15} {'Avg Bets':<10} {'Avg Profit':<12} {'Prof. %':<10} {'StdDev':<10} {'Risk/Reward':<12} {'Bankrupt %':<12} {'Min':<8} {'Median':<8} {'Max':<8}")
-    print("-" * 105)
-    
-    # Print table rows
-    for i in range(len(strategies)):
-        print(f"{strategies[i]:<15} {avg_bets[i]:<10.2f} {avg_profits[i]:<12.2f}% {profitable_pcts[i]:<10.2f}% {std_devs[i]:<10.2f}% {risk_adjusteds[i]:<12.4f} {bankruptcy_rates[i]:<12.2f}% {min_profits[i]:<8.2f}% {median_profits[i]:<8.2f}% {max_profits[i]:<8.2f}%")
 
 def simulate_arbitrage(data, num_simulations, track_bankroll=True):
     """Simulate arbitrage betting strategy"""
@@ -221,128 +177,13 @@ def simulate_arbitrage(data, num_simulations, track_bankroll=True):
     
     return total_bets, run_profits, bankroll_histories
 
-def simulate_positive_ev(data, num_simulations, track_bankroll=True):
-    """Simulate positive EV betting strategy using Kelly criterion with bankruptcy check"""
-    total_bets = 0
-    run_profits = []
-    bankroll_histories = []
-    
-    for _ in range(num_simulations):
-        run_profit = 0
-        run_bets = 0
-        
-        # Initialize starting bankroll at 100%
-        bankroll = 100.0
-        bankroll_history = [bankroll]
-        
-        for _, bet in data.iterrows():
-            # Stop betting if bankrupt (bankroll <= 0 or reaching -100% loss)
-            if bankroll <= 0:
-                break
-            
-            # Check if this is a positive EV opportunity (either over or under)
-            has_positive_ev = False
-            
-            # Ensure numeric values for comparison
-            over_edge = pd.to_numeric(bet['Over Edge (%)'], errors='coerce')
-            under_edge = pd.to_numeric(bet['Under Edge (%)'], errors='coerce')
-            
-            # Check for positive Over EV
-            if pd.notna(over_edge) and over_edge > 0:
-                has_positive_ev = True
-                run_bets += 1
-                
-                kelly_bet = pd.to_numeric(bet['Kelly Over Bet (% of bankroll)'], errors='coerce')
-                over_odds = pd.to_numeric(bet['Best Over Odds'], errors='coerce')
-                fair_odds_over = pd.to_numeric(bet['Fair Odds Over'], errors='coerce')
-                
-                # Skip if any conversion resulted in NaN
-                if pd.isna(kelly_bet) or pd.isna(over_odds) or pd.isna(fair_odds_over):
-                    continue
-                
-                fair_prob_over = odds_to_implied_probability(fair_odds_over)
-                over_outcome = simulate_outcome(fair_prob_over)
-                
-                # Calculate profit for this bet (adjusted for current bankroll)
-                bet_size_pct = kelly_bet
-                bet_profit = calculate_profit(bet_size_pct, over_odds, over_outcome)
-                
-                # Update run profit and bankroll
-                run_profit += bet_profit
-                bankroll += bet_profit
-                
-                # Check for bankruptcy after bet
-                if bankroll <= 0:
-                    # Set bankroll to 0 to represent total loss
-                    bankroll = 0
-                    run_profit = -100
-                    
-                    # Track bankroll evolution if requested
-                    if track_bankroll:
-                        bankroll_history.append(bankroll)
-                    break
-                
-                # Track bankroll evolution if requested
-                if track_bankroll:
-                    bankroll_history.append(bankroll)
-            
-            # Check for positive Under EV
-            if pd.notna(under_edge) and under_edge > 0:
-                # Only count as a new bet if we haven't already counted the Over
-                if not has_positive_ev:
-                    run_bets += 1
-                    has_positive_ev = True
-                
-                kelly_bet = pd.to_numeric(bet['Kelly Under Bet (% of bankroll)'], errors='coerce')
-                under_odds = pd.to_numeric(bet['Best Under Odds'], errors='coerce')
-                fair_odds_under = pd.to_numeric(bet['Fair Odds Under'], errors='coerce')
-                
-                # Skip if any conversion resulted in NaN
-                if pd.isna(kelly_bet) or pd.isna(under_odds) or pd.isna(fair_odds_under):
-                    continue
-                
-                fair_prob_under = odds_to_implied_probability(fair_odds_under)
-                under_outcome = simulate_outcome(fair_prob_under)
-                
-                # Calculate profit for this bet (adjusted for current bankroll)
-                bet_size_pct = kelly_bet
-                bet_profit = calculate_profit(bet_size_pct, under_odds, under_outcome)
-                
-                # Update run profit and bankroll
-                run_profit += bet_profit
-                bankroll += bet_profit
-                
-                # Check for bankruptcy after bet
-                if bankroll <= 0:
-                    # Set bankroll to 0 to represent total loss
-                    bankroll = 0
-                    run_profit = -100
-                    
-                    # Track bankroll evolution if requested
-                    if track_bankroll:
-                        bankroll_history.append(bankroll)
-                    break
-                
-                # Track bankroll evolution if requested
-                if track_bankroll:
-                    bankroll_history.append(bankroll)
-        
-        total_bets += run_bets
-        run_profits.append(run_profit)
-        
-        if track_bankroll:
-            bankroll_histories.append(bankroll_history)
-    
-    return total_bets, run_profits, bankroll_histories
-
-def simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=1.0, track_bankroll=True):
-    """
-    Simulate positive EV betting strategy using fractional Kelly criterion
+def simulate_positive_ev(data, num_simulations, kelly_fraction=1.0, track_bankroll=True):
+    """Simulate positive EV betting strategy using Kelly criterion with bankruptcy check
     
     Parameters:
-    data (DataFrame): The betting data
+    data (DataFrame): Betting data
     num_simulations (int): Number of simulation runs
-    kelly_fraction (float): Fraction of Kelly to bet (1.0 = full Kelly, 0.5 = half Kelly, etc.)
+    kelly_fraction (float): Fraction of the Kelly bet to use (default=1.0 for full Kelly)
     track_bankroll (bool): Whether to track bankroll history
     
     Returns:
@@ -377,17 +218,16 @@ def simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=
                 has_positive_ev = True
                 run_bets += 1
                 
-                # Apply the Kelly fraction to the bet size
                 kelly_bet = pd.to_numeric(bet['Kelly Over Bet (% of bankroll)'], errors='coerce')
-                if pd.notna(kelly_bet):
-                    kelly_bet = kelly_bet * kelly_fraction
-                
                 over_odds = pd.to_numeric(bet['Best Over Odds'], errors='coerce')
                 fair_odds_over = pd.to_numeric(bet['Fair Odds Over'], errors='coerce')
                 
                 # Skip if any conversion resulted in NaN
                 if pd.isna(kelly_bet) or pd.isna(over_odds) or pd.isna(fair_odds_over):
                     continue
+                
+                # Apply Kelly fraction
+                kelly_bet = kelly_bet * kelly_fraction
                 
                 fair_prob_over = odds_to_implied_probability(fair_odds_over)
                 over_outcome = simulate_outcome(fair_prob_over)
@@ -422,17 +262,16 @@ def simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=
                     run_bets += 1
                     has_positive_ev = True
                 
-                # Apply the Kelly fraction to the bet size
                 kelly_bet = pd.to_numeric(bet['Kelly Under Bet (% of bankroll)'], errors='coerce')
-                if pd.notna(kelly_bet):
-                    kelly_bet = kelly_bet * kelly_fraction
-                
                 under_odds = pd.to_numeric(bet['Best Under Odds'], errors='coerce')
                 fair_odds_under = pd.to_numeric(bet['Fair Odds Under'], errors='coerce')
                 
                 # Skip if any conversion resulted in NaN
                 if pd.isna(kelly_bet) or pd.isna(under_odds) or pd.isna(fair_odds_under):
                     continue
+                
+                # Apply Kelly fraction
+                kelly_bet = kelly_bet * kelly_fraction
                 
                 fair_prob_under = odds_to_implied_probability(fair_odds_under)
                 under_outcome = simulate_outcome(fair_prob_under)
@@ -468,162 +307,170 @@ def simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=
     
     return total_bets, run_profits, bankroll_histories
 
-def plot_results(arb_results, ev_results):
-    """Create visualizations comparing the two strategies"""
+def plot_kelly_comparison_results(arb_results, ev_results_full, ev_results_half, ev_results_quarter, output_path='/Users/jamieborst/Documents/Purdue Senior Year/BQFG/betting_strategy_comparison.png'):
+    """Create visualizations comparing all strategies including different Kelly fractions
+    
+    Parameters:
+    arb_results, ev_results_full, ev_results_half, ev_results_quarter: Simulation results
+    output_path (str): Path where the visualization should be saved
+    """
     arb_total_bets, arb_run_profits, arb_bankroll_histories = arb_results
-    ev_total_bets, ev_run_profits, ev_bankroll_histories = ev_results
+    
+    ev_full_total_bets, ev_full_run_profits, ev_full_bankroll_histories = ev_results_full
+    ev_half_total_bets, ev_half_run_profits, ev_half_bankroll_histories = ev_results_half
+    ev_quarter_total_bets, ev_quarter_run_profits, ev_quarter_bankroll_histories = ev_results_quarter
     
     # Calculate statistics
     arb_avg_profit, _, arb_std_dev, arb_risk_adjusted, _ = calculate_statistics(arb_run_profits)
-    ev_avg_profit, _, ev_std_dev, ev_risk_adjusted, _ = calculate_statistics(ev_run_profits)
+    
+    ev_full_avg_profit, _, ev_full_std_dev, ev_full_risk_adjusted, _ = calculate_statistics(ev_full_run_profits)
+    ev_half_avg_profit, _, ev_half_std_dev, ev_half_risk_adjusted, _ = calculate_statistics(ev_half_run_profits)
+    ev_quarter_avg_profit, _, ev_quarter_std_dev, ev_quarter_risk_adjusted, _ = calculate_statistics(ev_quarter_run_profits)
     
     # Process bankroll histories
-    arb_avg_history, _ = process_bankroll_histories(arb_bankroll_histories)
-    ev_avg_history, _ = process_bankroll_histories(ev_bankroll_histories)
+    arb_avg_history, arb_percentiles = process_bankroll_histories(arb_bankroll_histories)
     
-    plt.figure(figsize=(12, 12))
+    ev_full_avg_history, ev_full_percentiles = process_bankroll_histories(ev_full_bankroll_histories)
+    ev_half_avg_history, ev_half_percentiles = process_bankroll_histories(ev_half_bankroll_histories)
+    ev_quarter_avg_history, ev_quarter_percentiles = process_bankroll_histories(ev_quarter_bankroll_histories)
+    
+    plt.figure(figsize=(20, 16))
     
     # Plot 1: Profit distribution
-    plt.subplot(2, 2, 1)
-    sns.histplot(arb_run_profits, kde=True, label='Arbitrage', alpha=0.6)
-    sns.histplot(ev_run_profits, kde=True, label='Positive EV', alpha=0.6)
+    plt.subplot(2, 3, 1)
+    sns.histplot(arb_run_profits, kde=True, label='Arbitrage', alpha=0.4, color='blue')
+    sns.histplot(ev_full_run_profits, kde=True, label='Full Kelly', alpha=0.4, color='red')
+    sns.histplot(ev_half_run_profits, kde=True, label='Half Kelly', alpha=0.4, color='green')
+    sns.histplot(ev_quarter_run_profits, kde=True, label='Quarter Kelly', alpha=0.4, color='purple')
     plt.title('Profit Distribution')
     plt.xlabel('Profit Percentage')
     plt.ylabel('Frequency')
     plt.legend()
     
     # Plot 2: Box plot comparison
-    plt.subplot(2, 2, 2)
-    data = [arb_run_profits, ev_run_profits]
-    plt.boxplot(data, labels=['Arbitrage', 'Positive EV'])
+    plt.subplot(2, 3, 2)
+    data = [arb_run_profits, ev_full_run_profits, ev_half_run_profits, ev_quarter_run_profits]
+    plt.boxplot(data, tick_labels=['Arbitrage', 'Full Kelly', 'Half Kelly', 'Quarter Kelly'])
     plt.title('Profit Comparison')
     plt.ylabel('Profit Percentage')
     
     # Plot 3: Risk-adjusted return
-    plt.subplot(2, 2, 3)
-    labels = ['Arbitrage', 'Positive EV']
-    returns = [arb_avg_profit, ev_avg_profit]
-    stds = [arb_std_dev, ev_std_dev]
-    
-    x = np.arange(len(labels))
-    width = 0.35
-    
-    plt.bar(x - width/2, returns, width, label='Avg Return %')
-    plt.bar(x + width/2, stds, width, label='Std Dev %')
-    plt.title('Return and Risk Comparison')
-    plt.xticks(x, labels)
-    plt.legend()
-    
-    # Plot 4: Average Bankroll Evolution
-    plt.subplot(2, 2, 4)
-    x_arb = np.arange(len(arb_avg_history))
-    x_ev = np.arange(len(ev_avg_history))
-    
-    plt.plot(x_arb, arb_avg_history, label='Arbitrage')
-    plt.plot(x_ev, ev_avg_history, label='Positive EV')
-    plt.title('Average Bankroll Evolution')
-    plt.xlabel('Number of Bets')
-    plt.ylabel('Bankroll (%)')
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig('betting_strategy_comparison.png')
-    print("Visualization saved as 'betting_strategy_comparison.png'")
-
-def plot_kelly_comparison(full_kelly_results, half_kelly_results, quarter_kelly_results):
-    """Create visualizations comparing different Kelly fractions"""
-    # Unpack results
-    full_total_bets, full_run_profits, full_bankroll_histories = full_kelly_results
-    half_total_bets, half_run_profits, half_bankroll_histories = half_kelly_results
-    quarter_total_bets, quarter_run_profits, quarter_bankroll_histories = quarter_kelly_results
-    
-    # Calculate statistics
-    full_avg_profit, _, full_std_dev, full_risk_adjusted, full_percentiles = calculate_statistics(full_run_profits)
-    half_avg_profit, _, half_std_dev, half_risk_adjusted, half_percentiles = calculate_statistics(half_run_profits)
-    quarter_avg_profit, _, quarter_std_dev, quarter_risk_adjusted, quarter_percentiles = calculate_statistics(quarter_run_profits)
-    
-    # Process bankroll histories
-    full_avg_history, full_percentile_histories = process_bankroll_histories(full_bankroll_histories)
-    half_avg_history, half_percentile_histories = process_bankroll_histories(half_bankroll_histories)
-    quarter_avg_history, quarter_percentile_histories = process_bankroll_histories(quarter_bankroll_histories)
-    
-    plt.figure(figsize=(15, 15))
-    
-    # Plot 1: Profit distribution
-    plt.subplot(2, 2, 1)
-    sns.histplot(full_run_profits, kde=True, label='Full Kelly', alpha=0.6, color='blue')
-    sns.histplot(half_run_profits, kde=True, label='Half Kelly', alpha=0.6, color='green')
-    sns.histplot(quarter_run_profits, kde=True, label='Quarter Kelly', alpha=0.6, color='red')
-    plt.title('Profit Distribution by Kelly Fraction')
-    plt.xlabel('Profit Percentage')
-    plt.ylabel('Frequency')
-    plt.legend()
-    
-    # Plot 2: Box plot comparison
-    plt.subplot(2, 2, 2)
-    data = [full_run_profits, half_run_profits, quarter_run_profits]
-    plt.boxplot(data, labels=['Full Kelly', 'Half Kelly', 'Quarter Kelly'])
-    plt.title('Profit Comparison by Kelly Fraction')
-    plt.ylabel('Profit Percentage')
-    
-    # Plot 3: Risk-adjusted return
-    plt.subplot(2, 2, 3)
-    labels = ['Full Kelly', 'Half Kelly', 'Quarter Kelly']
-    returns = [full_avg_profit, half_avg_profit, quarter_avg_profit]
-    stds = [full_std_dev, half_std_dev, quarter_std_dev]
-    risk_adjusted = [full_risk_adjusted, half_risk_adjusted, quarter_risk_adjusted]
+    plt.subplot(2, 3, 3)
+    labels = ['Arbitrage', 'Full Kelly', 'Half Kelly', 'Quarter Kelly']
+    returns = [arb_avg_profit, ev_full_avg_profit, ev_half_avg_profit, ev_quarter_avg_profit]
+    stds = [arb_std_dev, ev_full_std_dev, ev_half_std_dev, ev_quarter_std_dev]
+    risk_adjusted = [arb_risk_adjusted, ev_full_risk_adjusted, ev_half_risk_adjusted, ev_quarter_risk_adjusted]
     
     x = np.arange(len(labels))
     width = 0.25
     
     plt.bar(x - width, returns, width, label='Avg Return %')
     plt.bar(x, stds, width, label='Std Dev %')
-    plt.bar(x + width, risk_adjusted, width, label='Return/Risk')
+    plt.bar(x + width, risk_adjusted, width, label='Risk-Adjusted Return')
     plt.title('Return and Risk Comparison')
-    plt.xticks(x, labels)
+    plt.xticks(x, labels, rotation=45)
     plt.legend()
     
     # Plot 4: Average Bankroll Evolution
-    plt.subplot(2, 2, 4)
-    
-    # Add shaded regions for percentiles
-    x_full = np.arange(len(full_avg_history))
-    if len(x_full) > 0:
-        plt.fill_between(x_full, full_percentile_histories['p25'], full_percentile_histories['p75'], 
-                         alpha=0.2, color='blue', label='Full Kelly IQR')
-    
-    x_half = np.arange(len(half_avg_history))
-    if len(x_half) > 0:
-        plt.fill_between(x_half, half_percentile_histories['p25'], half_percentile_histories['p75'], 
-                        alpha=0.2, color='green', label='Half Kelly IQR')
-    
-    x_quarter = np.arange(len(quarter_avg_history))
-    if len(x_quarter) > 0:
-        plt.fill_between(x_quarter, quarter_percentile_histories['p25'], quarter_percentile_histories['p75'], 
-                        alpha=0.2, color='red', label='Quarter Kelly IQR')
-    
-    # Add median lines
-    if len(x_full) > 0:
-        plt.plot(x_full, full_avg_history, label='Full Kelly Avg', color='blue', linewidth=2)
-    if len(x_half) > 0:
-        plt.plot(x_half, half_avg_history, label='Half Kelly Avg', color='green', linewidth=2)
-    if len(x_quarter) > 0:
-        plt.plot(x_quarter, quarter_avg_history, label='Quarter Kelly Avg', color='red', linewidth=2)
-    
-    plt.title('Average Bankroll Evolution by Kelly Fraction')
+    plt.subplot(2, 3, 4)
+    x_arb = np.arange(len(arb_avg_history))
+    plt.plot(x_arb, arb_avg_history, label='Arbitrage', color='blue')
+    plt.plot(np.arange(len(ev_full_avg_history)), ev_full_avg_history, label='Full Kelly', color='red')
+    plt.plot(np.arange(len(ev_half_avg_history)), ev_half_avg_history, label='Half Kelly', color='green')
+    plt.plot(np.arange(len(ev_quarter_avg_history)), ev_quarter_avg_history, label='Quarter Kelly', color='purple')
+    plt.title('Average Bankroll Evolution')
     plt.xlabel('Number of Bets')
     plt.ylabel('Bankroll (%)')
     plt.legend()
     
+    # Plot 5: Final Bankroll Distribution
+    plt.subplot(2, 3, 5)
+    # Get the final bankroll values for each strategy
+    arb_final_bankrolls = [history[-1] for history in arb_bankroll_histories]
+    ev_full_final_bankrolls = [history[-1] for history in ev_full_bankroll_histories]
+    ev_half_final_bankrolls = [history[-1] for history in ev_half_bankroll_histories]
+    ev_quarter_final_bankrolls = [history[-1] for history in ev_quarter_bankroll_histories]
+    
+    sns.kdeplot(arb_final_bankrolls, label='Arbitrage', color='blue', warn_singular=False)
+    sns.kdeplot(ev_full_final_bankrolls, label='Full Kelly', color='red')
+    sns.kdeplot(ev_half_final_bankrolls, label='Half Kelly', color='green')
+    sns.kdeplot(ev_quarter_final_bankrolls, label='Quarter Kelly', color='purple')
+    plt.title('Final Bankroll Distribution')
+    plt.xlabel('Final Bankroll (%)')
+    plt.ylabel('Density')
+    plt.legend()
+    
+    # Plot 6: Bankruptcy Rate
+    plt.subplot(2, 3, 6)
+    bankruptcy_rates = [
+        sum(1 for b in arb_final_bankrolls if b <= 0) / len(arb_final_bankrolls) * 100,
+        sum(1 for b in ev_full_final_bankrolls if b <= 0) / len(ev_full_final_bankrolls) * 100,
+        sum(1 for b in ev_half_final_bankrolls if b <= 0) / len(ev_half_final_bankrolls) * 100,
+        sum(1 for b in ev_quarter_final_bankrolls if b <= 0) / len(ev_quarter_final_bankrolls) * 100
+    ]
+    
+    plt.bar(labels, bankruptcy_rates)
+    plt.title('Bankruptcy Rate')
+    plt.ylabel('Percentage of Runs (%)')
+    plt.ylim(0, max(bankruptcy_rates) * 1.2 if max(bankruptcy_rates) > 0 else 5)
+    
     plt.tight_layout()
-    plt.savefig('kelly_fraction_comparison.png')
-    print("Kelly fraction comparison visualization saved as 'kelly_fraction_comparison.png'")
+    plt.savefig(output_path)
+    print(f"Visualization saved as '{output_path}'")
+
+def export_results_to_csv(strategy_names, stats, output_path):
+    """Export simulation statistics to a CSV file
+    
+    Parameters:
+    strategy_names (list): List of strategy names
+    stats (list): List of tuples containing (avg_profit, std_dev, risk_adjusted)
+    output_path (str): Path to save the CSV file
+    """
+    # Create a DataFrame with all statistics
+    results_df = pd.DataFrame({
+        'Strategy': strategy_names,
+        'Average Profit (%)': [stat[0] for stat in stats],
+        'Standard Deviation (%)': [stat[1] for stat in stats],
+        'Risk-Adjusted Return': [stat[2] for stat in stats]
+    })
+    
+    # Save to CSV
+    results_df.to_csv(output_path, index=False)
+    print(f"Results saved to {output_path}")
+
+def collect_detailed_stats(strategy_name, num_runs, total_bets, run_profits):
+    """Collect detailed statistics for CSV output without printing"""
+    avg_bets_per_run = total_bets / num_runs
+    avg_profit, profitable_runs_pct, std_dev, risk_adjusted, percentiles = calculate_statistics(run_profits)
+    
+    # Return as dictionary for easier CSV conversion
+    return {
+        'Strategy': strategy_name,
+        'Average Bets Per Run': avg_bets_per_run,
+        'Average Profit (%)': avg_profit,
+        'Profitable Runs (%)': profitable_runs_pct,
+        'Standard Deviation (%)': std_dev,
+        'Risk-Adjusted Return': risk_adjusted,
+        'Min Profit (%)': percentiles['min'],
+        'P25 Profit (%)': percentiles['p25'],
+        'Median Profit (%)': percentiles['median'],
+        'P75 Profit (%)': percentiles['p75'],
+        'Max Profit (%)': percentiles['max']
+    }
 
 def main():
-    # Check if file exists
-    if not os.path.exists(CSV_PATH):
-        print(f"Error: File not found at {CSV_PATH}")
-        return
+    # Define output paths
+    import os.path
+    # Get user's documents folder - works cross-platform
+    if os.name == 'nt':  # Windows
+        documents_folder = os.path.join(os.path.expanduser('~'), 'Documents')
+    else:  # macOS/Linux
+        documents_folder = os.path.join(os.path.expanduser('~'), 'Documents')
+        
+    # Create output paths
+    results_csv_path = os.path.join(documents_folder, '/Users/jamieborst/Documents/Purdue Senior Year/BQFG/betting_strategy_results.csv')
+    detailed_results_csv_path = os.path.join(documents_folder, '/Users/jamieborst/Documents/Purdue Senior Year/BQFG/betting_strategy_detailed_results.csv')
+    kelly_plot_path = os.path.join(documents_folder, '/Users/jamieborst/Documents/Purdue Senior Year/BQFG/betting_strategy_comparison.png')
     
     # Load the data
     data = pd.read_csv(CSV_PATH)
@@ -647,29 +494,52 @@ def main():
     num_simulations = 10000
     print(f"Running {num_simulations} simulations for each strategy...")
     
-    # Run simulations for original strategies
+    # Run simulations
+    print("Simulating Arbitrage strategy...")
     arb_results = simulate_arbitrage(data, num_simulations)
-    ev_results = simulate_positive_ev(data, num_simulations)  # This is full Kelly
     
-    # Run simulations for fractional Kelly strategies
-    half_kelly_results = simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=0.5)
-    quarter_kelly_results = simulate_positive_ev_fractional_kelly(data, num_simulations, kelly_fraction=0.25)
+    print("Simulating Full Kelly (100%) strategy...")
+    ev_full_results = simulate_positive_ev(data, num_simulations, kelly_fraction=1.0)
     
-    # Print results for original strategies
-    print(f"\n=== ORIGINAL STRATEGY RESULTS ({num_simulations} runs) ===")
+    print("Simulating Half Kelly (50%) strategy...")
+    ev_half_results = simulate_positive_ev(data, num_simulations, kelly_fraction=0.5)
+    
+    print("Simulating Quarter Kelly (25%) strategy...")
+    ev_quarter_results = simulate_positive_ev(data, num_simulations, kelly_fraction=0.25)
+    
+    # Print results to console for reference
+    print(f"\n=== SIMULATION RESULTS ({num_simulations} runs) ===")
     arb_stats = print_strategy_results("Arbitrage", num_simulations, arb_results[0], arb_results[1])
-    ev_stats = print_strategy_results("Positive EV (Full Kelly)", num_simulations, ev_results[0], ev_results[1])
+    ev_full_stats = print_strategy_results("Full Kelly (100%)", num_simulations, ev_full_results[0], ev_full_results[1])
+    ev_half_stats = print_strategy_results("Half Kelly (50%)", num_simulations, ev_half_results[0], ev_half_results[1])
+    ev_quarter_stats = print_strategy_results("Quarter Kelly (25%)", num_simulations, ev_quarter_results[0], ev_quarter_results[1])
     
     print("\nCOMPARISON:")
     print(f"Risk-adjusted return (Profit/StdDev) - Arbitrage: {arb_stats[2]:.4f}")
-    print(f"Risk-adjusted return (Profit/StdDev) - Positive EV (Full Kelly): {ev_stats[2]:.4f}")
+    print(f"Risk-adjusted return (Profit/StdDev) - Full Kelly: {ev_full_stats[2]:.4f}")
+    print(f"Risk-adjusted return (Profit/StdDev) - Half Kelly: {ev_half_stats[2]:.4f}")
+    print(f"Risk-adjusted return (Profit/StdDev) - Quarter Kelly: {ev_quarter_stats[2]:.4f}")
     
-    # Print results for Kelly fraction comparison
-    print_kelly_comparison_results(ev_results, half_kelly_results, quarter_kelly_results, num_simulations)
+    # Generate visualizations for all strategies and save to Documents folder
+    plot_kelly_comparison_results(arb_results, ev_full_results, ev_half_results, ev_quarter_results, 
+                                 output_path=kelly_plot_path)
     
-    # Generate visualizations
-    plot_results(arb_results, ev_results)
-    plot_kelly_comparison(ev_results, half_kelly_results, quarter_kelly_results)
+    # Export summary results to CSV
+    strategy_names = ['Arbitrage', 'Full Kelly (100%)', 'Half Kelly (50%)', 'Quarter Kelly (25%)']
+    stats = [arb_stats, ev_full_stats, ev_half_stats, ev_quarter_stats]
+    export_results_to_csv(strategy_names, stats, results_csv_path)
+    
+    # Export detailed results to CSV
+    detailed_stats = []
+    detailed_stats.append(collect_detailed_stats("Arbitrage", num_simulations, arb_results[0], arb_results[1]))
+    detailed_stats.append(collect_detailed_stats("Full Kelly (100%)", num_simulations, ev_full_results[0], ev_full_results[1]))
+    detailed_stats.append(collect_detailed_stats("Half Kelly (50%)", num_simulations, ev_half_results[0], ev_half_results[1]))
+    detailed_stats.append(collect_detailed_stats("Quarter Kelly (25%)", num_simulations, ev_quarter_results[0], ev_quarter_results[1]))
+    
+    # Convert to DataFrame and save
+    detailed_df = pd.DataFrame(detailed_stats)
+    detailed_df.to_csv(detailed_results_csv_path, index=False)
+    print(f"Detailed results saved to {detailed_results_csv_path}")
 
 if __name__ == "__main__":
     main()
