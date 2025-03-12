@@ -1,4 +1,5 @@
 import requests
+import os
 import json
 import pandas as pd
 from datetime import datetime
@@ -123,6 +124,96 @@ class PlayerPropsAggregator:
                         under_price_key = f"{bookmaker_key}_under_price"
                         props_dict[prop_key][under_price_key] = price
         return props_dict
+
+    def get_bet_id(row):
+        """
+        Generate a unique identifier for a bet using:
+          - game_id, market, player_name, and any columns ending in 
+            '_line', '_over_price', or '_under_price'.
+        """
+        base_id = f"{row.get('game_id', '')}_{row.get('market', '')}_{row.get('player_name', '')}"
+        extra_parts = []
+        for col in row.index:
+            if col.endswith('_line') or col.endswith('_over_price') or col.endswith('_under_price'):
+                value = row[col]
+                if pd.notnull(value):
+                    extra_parts.append(f"{col}:{value}")
+        extra_parts.sort()
+        full_id = base_id + ("_" + "_".join(extra_parts) if extra_parts else "")
+        return full_id
+
+    def update_active_bets(new_df, active_file='player_props.csv', history_file='bet_history.csv'):
+        """
+        Update the active bets CSV using actual timestamps instead of a fixed interval.
+        
+        new_df: DataFrame from the latest API call. It must include:
+            - A 'timestamp' column (will be treated as the new run's timestamp for each row).
+            - A 'bet_id' column (if not present, it will be created using get_bet_id).
+        
+        active_file: CSV file where active bets (with their start times and durations) are stored.
+        history_file: CSV file where expired bets are archived.
+        
+        For each bet in new_df:
+          - If it exists in active_file (by bet_id), update its duration as:
+              duration = (current_run_time - start_time).total_seconds()
+          - Otherwise, add it as a new bet, setting its start_time to the current time and duration to 0.
+        
+        Bets present in active_file but not in new_df are considered expired. Their final duration is computed
+        and they are appended to the history_file before being removed from active bets.
+        """
+        current_run_time = datetime.now()
+        
+        new_df['timestamp'] = pd.to_datetime(new_df['timestamp'], errors='coerce')
+        
+        if 'bet_id' not in new_df.columns:
+            new_df['bet_id'] = new_df.apply(get_bet_id, axis=1)
+        
+        try:
+            active_df = pd.read_csv(active_file)
+            active_df['timestamp'] = pd.to_datetime(active_df['timestamp'], errors='coerce')
+        except (FileNotFoundError, pd.errors.EmptyDataError):
+            active_df = pd.DataFrame(columns=new_df.columns.tolist() + ['duration'])
+        
+        if 'duration' not in active_df.columns:
+            active_df['duration'] = 0
+        
+        active_dict = {row['bet_id']: row for _, row in active_df.iterrows()}
+        
+        updated_active = []
+        expired_bets = []
+        
+        for _, new_row in new_df.iterrows():
+            bet_id = new_row['bet_id']
+            if bet_id in active_dict:
+                active_start = pd.to_datetime(active_dict[bet_id]['timestamp'])
+                new_duration = (current_run_time - active_start).total_seconds()
+                new_row['duration'] = new_duration
+                updated_active.append(new_row)
+                del active_dict[bet_id]
+            else:
+                new_row['timestamp'] = current_run_time
+                new_row['duration'] = 0
+                updated_active.append(new_row)
+        
+        for bet_id, expired_row in active_dict.items():
+            # Compute final duration using the current run time.
+            start_time = pd.to_datetime(expired_row['timestamp'])
+            expired_row['duration'] = (current_run_time - start_time).total_seconds()
+            expired_bets.append(expired_row)
+        
+        if expired_bets:
+            expired_df = pd.DataFrame(expired_bets)
+            try:
+                history_df = pd.read_csv(history_file)
+                history_df = pd.concat([history_df, expired_df], ignore_index=True)
+            except (FileNotFoundError, pd.errors.EmptyDataError):
+                history_df = expired_df
+            history_df.to_csv(history_file, index=False)
+        
+        updated_active_df = pd.DataFrame(updated_active)
+        updated_active_df.to_csv(active_file, index=False)
+        
+        return updated_active_df, expired_bets
     
     def run(self, output_file: str):
         all_props = {}
@@ -137,7 +228,15 @@ class PlayerPropsAggregator:
                 props = self.extract_player_props_from_event(odds, sport_key)
                 all_props.update(props)
         if all_props:
-            self.save_to_csv(all_props, output_file)
+            new_df = pd.DataFrame(list(all_props.values()))
+            new_df['timestamp'] = pd.to_datetime(new_df['timestamp'], errors='coerce')
+            
+            new_df['bet_id'] = new_df.apply(get_bet_id, axis=1)
+            
+            updated_active_df, expired_bets = update_active_bets(new_df,
+                                                                 active_file=output_file,
+                                                                 history_file="bet_history.csv")
+            self.logger.info(f"Active bets updated: {len(updated_active_df)} bets active; {len(expired_bets)} bets expired.")
         else:
             self.logger.error("No player prop information found across all events.")
     
