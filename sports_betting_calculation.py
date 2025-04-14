@@ -58,7 +58,7 @@ def kelly_criterion(fair_odds, best_odds):
     win_prob = implied_probability(fair_odds)
     b = decimal_odds(best_odds) - 1
     q = 1 - win_prob
-    return (win_prob * b - q) / b
+    return ((win_prob * b - q) / b) / 4
 
 # Calculate no-vig (fair) odds
 def no_vig(over_odds, under_odds):
@@ -84,7 +84,9 @@ def best_odds(row, sportsbooks, bet_type):
     return best_odds, best_book
 
 # Load the CSV file
-df = pd.read_csv('player_props_new.csv')
+df = pd.read_csv('/Users/sebastianbohrt/Desktop/synthetic_player_props.csv')
+arb_df = df.copy()
+ev_df = df.copy()
 
 sportsbooks = ['fliff', 'novig', 'fanatics', 'prophetX', 'betmgm', 'bet365', 'draftkings', 'caesars', 'fanduel', 'hard_rock_bet', 'bally_bet', 'pinnacle']
 over_odds = [f"{book}_over_price" for book in sportsbooks]
@@ -95,16 +97,16 @@ line_columns = [f"{book}_line" for book in sportsbooks]
 # --- Arbitrage Section ---
 
 # Add new columns to the DataFrame
-df['Arb %'] = None
-df['Player Prop'] = None
-df['Game'] = None
-df['Line'] = None
-df['Book 1'] = None
-df['Odds Over'] = None
-df['Bet Over'] = None
-df['Book 2'] = None
-df['Odds Under'] = None
-df['Bet Under'] = None
+arb_df['Arb %'] = None
+arb_df['Player Prop'] = None
+arb_df['Game'] = None
+arb_df['Line'] = None
+arb_df['Book 1'] = None
+arb_df['Odds Over'] = None
+arb_df['Bet Over'] = None
+arb_df['Book 2'] = None
+arb_df['Odds Under'] = None
+arb_df['Bet Under'] = None
 
 for i, row in df.iterrows():
     # Find best odds from two books
@@ -126,21 +128,92 @@ for i, row in df.iterrows():
         line_col = f"{best_over_book}_line"
 
         # Save the opportunity
-        df.at[i, 'Arb %'] = arb_percent + '%'
-        df.at[i, 'Player Prop'] = row.get('player_name', '') + " - " + row.get('market', '')
-        df.at[i, 'Game'] = row.get('away_team', '') + " vs " + row.get('home_team', '')
-        df.at[i, 'Line'] = row.get(line_col, '')
-        df.at[i, 'Book 1'] = best_over_book
-        df.at[i, 'Odds Over'] = best_over_odds
-        df.at[i, 'Bet Over'] = round(bet_over, 2)
-        df.at[i, 'Book 2'] = best_under_book
-        df.at[i, 'Odds Under'] = best_under_odds
-        df.at[i, 'Bet Under'] = round(bet_under, 2)
+        arb_df.at[i, 'Arb %'] = arb_percent
+        arb_df.at[i, 'Player Prop'] = row.get('player_name', '') + " - " + row.get('market', '')
+        arb_df.at[i, 'Game'] = row.get('away_team', '') + " vs " + row.get('home_team', '')
+        arb_df.at[i, 'Line'] = row.get(line_col, '')
+        arb_df.at[i, 'Book 1'] = best_over_book
+        arb_df.at[i, 'Odds Over'] = best_over_odds
+        arb_df.at[i, 'Bet Over'] = round(bet_over, 2)
+        arb_df.at[i, 'Book 2'] = best_under_book
+        arb_df.at[i, 'Odds Under'] = best_under_odds
+        arb_df.at[i, 'Bet Under'] = round(bet_under, 2)
 
 # Filter, Sort, and save
-arb_df = df[df['Arb %'].notnull()]
+arb_df = arb_df[arb_df['Arb %'].notnull()]
 arb_df = arb_df.sort_values(by='Arb %', ascending=False)
-arb_df.to_csv('arbitrage_opportunities.csv', index=False)
-print("Saved arbitrage opportunities to 'arbitrage_opportunities.csv'")
+arb_df[['Arb %', 'Player Prop', 'Game', 'Line', 'Book 1', 'Odds Over', 'Bet Over', 'Book 2', 'Odds Under', 'Bet Under']].to_csv('Arbitrage_Opportunities.csv', index=False)
+print("Saved arbitrage opportunities to 'Arbitrage_Opportunities.csv'")
 
 # --- Pos EV Section ---
+# Add new columns to the DataFrame
+ev_df['EV %'] = None
+ev_df['Player Prop'] = None
+ev_df['Game'] = None
+ev_df['Line'] = None
+ev_df['Book'] = None
+ev_df['Odds'] = None
+ev_df['Novig Odds'] = None
+ev_df['Bet Size'] = None
+
+for i, row in df.iterrows():
+    # Find best odds from two books
+    best_over_odds, best_over_book = best_odds(row, sportsbooks, 'over')
+    best_under_odds, best_under_book = best_odds(row, sportsbooks, 'under')
+
+    # Find no vig odds from Pinnacle Sportsbook
+    if pd.isna(row['pinnacle_over_price']) or pd.isna(row['pinnacle_under_price']):
+        continue
+
+    fair_over_odds, fair_under_odds = no_vig(row['pinnacle_over_price'], row['pinnacle_under_price'])
+
+    if best_over_odds > fair_over_odds or best_under_odds > fair_under_odds:
+        # Calculate Expected Value
+        ev_over = expected_value(fair_over_odds, best_over_odds)
+        ev_under = expected_value(fair_under_odds, best_under_odds)
+
+        # Calculate Expected Value
+        bet_over = kelly_criterion(fair_over_odds, best_over_odds)
+        bet_under = kelly_criterion(fair_under_odds, best_under_odds)
+
+        line_col = f"{best_over_book}_line"
+
+        # Save the opportunity
+        ev_df.at[i, 'Player Prop'] = row.get('player_name', '') + " - " + row.get('market', '')
+        ev_df.at[i, 'Game'] = row.get('away_team', '') + " vs " + row.get('home_team', '')
+        ev_df.at[i, 'Line'] = row.get(line_col, '')
+        # Choose between over or under line
+        if ev_over and ev_under:
+            if ev_over > ev_under:
+                ev_df.at[i, 'EV %'] = round(ev_over, 2) if ev_over else None
+                ev_df.at[i, 'Book'] = best_over_book
+                ev_df.at[i, 'Odds'] = best_over_odds
+                ev_df.at[i, 'Novig Odds'] = round(fair_over_odds,2)
+                ev_df.at[i, 'Bet Size'] = round(bet_over, 2) if bet_over else None
+            else:
+                ev_df.at[i, 'EV %'] = round(ev_under, 2) if ev_under else None
+                ev_df.at[i, 'Book'] = best_under_book
+                ev_df.at[i, 'Odds'] = best_under_odds
+                ev_df.at[i, 'Novig Odds'] = round(fair_over_odds,2)
+                ev_df.at[i, 'Bet Size'] = round(bet_under, 2) if bet_under else None
+        
+        elif bet_over:
+            ev_df.at[i, 'EV %'] = round(ev_over, 2) if ev_over else None
+            ev_df.at[i, 'Book'] = best_over_book
+            ev_df.at[i, 'Odds'] = best_over_odds
+            ev_df.at[i, 'Novig Odds'] = round(fair_over_odds,2)
+            ev_df.at[i, 'Bet Size'] = round(bet_over, 2) if bet_over else None
+        
+        elif bet_under:
+            ev_df.at[i, 'EV %'] = round(ev_under, 2) if ev_under else None
+            ev_df.at[i, 'Book'] = best_under_book
+            ev_df.at[i, 'Odds'] = best_under_odds
+            ev_df.at[i, 'Novig Odds'] = round(fair_over_odds,2)
+            ev_df.at[i, 'Bet Size'] = round(bet_under, 2) if bet_under else None 
+
+# Filter, Sort, and save
+ev_df = ev_df[ev_df['EV %'].notnull()]
+ev_df = ev_df.sort_values(by='EV %', ascending=False)
+ev_df[['EV%', 'Player Prop', 'Game', 'Line', 'Book', 'Odds', 'Novig Odds', 'Bet Size']].to_csv('Expected_Value_Bets.csv', index=False)
+print("Saved arbitrage opportunities to 'Expected_Value_Bets.csv'")
+
