@@ -294,84 +294,73 @@ def calculate_ev_opportunities(df):
 
 def update_bet_history(arb_df, ev_df, s3_client, bucket_name):
     """Update the bet history by combining active bet information."""
-    # Combine arbitrage and EV opportunities
+    # Combine arbitrage and EV data
     combined_df = pd.DataFrame()
-    
     if not arb_df.empty:
-        arb_df['Type'] = 'Arbitrage'
-        combined_df = pd.concat([combined_df, arb_df], ignore_index=True)
-        
+        arb_copy = arb_df.copy()
+        arb_copy['Type'] = 'Arbitrage'
+        combined_df = pd.concat([combined_df, arb_copy], ignore_index=True)
     if not ev_df.empty:
-        ev_df['Type'] = 'Expected Value'
-        combined_df = pd.concat([combined_df, ev_df], ignore_index=True)
-    
+        ev_copy = ev_df.copy()
+        ev_copy['Type'] = 'Expected Value'
+        combined_df = pd.concat([combined_df, ev_copy], ignore_index=True)
     if combined_df.empty:
         logger.info("No bets to track history for.")
         return
-        
-    # Try to read existing active bets from S3
+
+    # Load existing active bets
     try:
-        response = s3_client.get_object(
-            Bucket=bucket_name,
-            Key='active/active_bets.csv'
-        )
+        response = s3_client.get_object(Bucket=bucket_name, Key='active/active_bets.csv')
         active_df = pd.read_csv(response['Body'])
         active_df['timestamp'] = pd.to_datetime(active_df['timestamp'], errors='coerce')
+        if 'duration' not in active_df.columns:
+            active_df['duration'] = 0
     except Exception as e:
         logger.info(f"No active bets file found or error reading file: {e}")
-        active_df = pd.DataFrame(columns=combined_df.columns.tolist() + ['duration'])
-    
-    # Add duration column if not present
-    if 'duration' not in active_df.columns:
-        active_df['duration'] = 0
-        
-    # Get current timestamp
+        active_df = pd.DataFrame(columns=list(combined_df.columns) + ['duration'])
+
     current_time = datetime.now()
-    
-    # Create dictionaries for faster lookups
-    active_dict = {row['bet_id']: row for _, row in active_df.iterrows()} if 'bet_id' in active_df else {}
-    
-    # Prepare updated active and expired bets lists
+
+    # Map existing bets by bet_id to their rows
+    active_dict = {
+        row['bet_id']: row
+        for _, row in active_df.iterrows()
+        if 'bet_id' in row and pd.notna(row['bet_id'])
+    }
+
     updated_active = []
     expired_bets = []
-    
-    # Process all new bets
-    for _, new_row in combined_df.iterrows():
-        if 'bet_id' not in new_row or pd.isna(new_row['bet_id']):
+
+    # Iterate through current combined bets
+    for _, row in combined_df.iterrows():
+        bet_id = row.get('bet_id')
+        if pd.isna(bet_id):
             continue
-            
-        bet_id = new_row['bet_id']
-        
+
+        row_copy = row.copy()
         if bet_id in active_dict:
-            # Calculate duration for existing bet
-            active_start = pd.to_datetime(active_dict[bet_id]['timestamp'])
-            new_duration = (current_time - active_start).total_seconds()
-            
-            # Update duration
-            new_row = new_row.copy()
-            new_row['duration'] = new_duration
-            updated_active.append(new_row)
-            
-            # Remove from active dict to track what's no longer active
+            # Existing bet: preserve original timestamp and update duration
+            start_time = active_dict[bet_id]['timestamp']
+            elapsed = (current_time - start_time).total_seconds()
+            row_copy['duration'] = elapsed
+            row_copy['timestamp'] = start_time
+            updated_active.append(row_copy)
             del active_dict[bet_id]
         else:
-            # Add new bet with 0 duration
-            new_row = new_row.copy()
-            new_row['duration'] = 0
-            updated_active.append(new_row)
-    
-    # Process expired bets
+            # New bet: initialize timestamp and duration
+            row_copy['duration'] = 0
+            row_copy['timestamp'] = current_time
+            updated_active.append(row_copy)
+
+    # Any remaining in active_dict are expired bets
     for bet_id, expired_row in active_dict.items():
-        # Calculate final duration
-        start_time = pd.to_datetime(expired_row['timestamp'])
+        start_time = expired_row['timestamp']
         expired_row['duration'] = (current_time - start_time).total_seconds()
         expired_bets.append(expired_row)
-    
-    # Convert to DataFrames
-    updated_active_df = pd.DataFrame(updated_active)
-    
-    # Save updated active bets to S3
-    if not updated_active_df.empty:
+
+    # Save updated active bets back to S3
+    if updated_active:
+        updated_active_df = pd.DataFrame(updated_active)
         csv_buffer = StringIO()
         updated_active_df.to_csv(csv_buffer, index=False)
         s3_client.put_object(
@@ -380,22 +369,17 @@ def update_bet_history(arb_df, ev_df, s3_client, bucket_name):
             Body=csv_buffer.getvalue()
         )
         logger.info(f"Updated active bets file with {len(updated_active_df)} bets")
-    
-    # Handle expired bets - add to history
+
+    # Append expired bets to history
     if expired_bets:
         expired_df = pd.DataFrame(expired_bets)
         try:
-            response = s3_client.get_object(
-                Bucket=bucket_name,
-                Key='history/bet_history.csv'
-            )
+            response = s3_client.get_object(Bucket=bucket_name, Key='history/bet_history.csv')
             history_df = pd.read_csv(response['Body'])
             history_df = pd.concat([history_df, expired_df], ignore_index=True)
         except Exception as e:
             logger.info(f"No history file found or error reading file: {e}")
             history_df = expired_df
-        
-        # Save updated history to S3
         csv_buffer = StringIO()
         history_df.to_csv(csv_buffer, index=False)
         s3_client.put_object(
@@ -404,8 +388,7 @@ def update_bet_history(arb_df, ev_df, s3_client, bucket_name):
             Body=csv_buffer.getvalue()
         )
         logger.info(f"Added {len(expired_bets)} expired bets to history")
-    
-    return
+
 
 def lambda_handler(event, context):
     try:
